@@ -74,11 +74,11 @@ DevOps is a cultural and technical movement that bridges the gap between softwar
 
 # The Steps to implement as Prerequisite
 
--> Install the Node,npm and Postgres service in your respective PCs ( can be done in free tier VMs as well )
--> Try deploying a basic todo app ( generate code using AI ) and then install the dependencies in package.json
--> Check the yarn commmands ( can use npm as well )
--> Make it run and expose it on a port
--> Check the page in the web browser ( localhost:3000 or whichever port you gave )
--> Install pm2 and check how it runs the process in the background
--> Try connecting the frontend, backend and database if possible ( we will doing it anyway in the project )
--> Once you succeed this at the server level, then containerise the App, deploy it in Kubernetes , automate those as per requirements
+1.  Install the Node,npm and Postgres service in your respective PCs ( can be done in free tier VMs as well )
+2.  Try deploying a basic todo app ( generate code using AI ) and then install the dependencies in package.json
+3.  Check the yarn commmands ( can use npm as well )
+4.  Make it run and expose it on a port
+5.  Check the page in the web browser ( localhost:3000 or whichever port you gave )
+6.  Install pm2 and check how it runs the process in the background
+7.  Try connecting the frontend, backend and database if possible ( we will doing it anyway in the project )
+8.  Once you succeed this at the server level, then containerise the App, deploy it in Kubernetes automate those as per requirements
