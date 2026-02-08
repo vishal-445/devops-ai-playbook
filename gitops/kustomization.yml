@@ -1,13 +1,13 @@
 resources:
   - namespace.yaml
   - secrets.yaml
-  - postgres/init-scripts-configmap.yaml
-  - postgres/statefulset.yaml
-  - postgres/service.yaml
-  - backend/gateway.yaml
-  - backend/auth.yaml
-  - backend/product-service.yaml
-  - backend/order-service.yaml
-  - backend/orders.yaml
-  - backend/user-service.yaml
-  - frontend/deployment.yaml
+  - k8s/database/init-scripts-configmap.yaml
+  - k8s/database/statefulset.yaml
+  - k8s/database/service.yaml
+  - k8s/backend/gateway.yaml
+  - k8s/backend/auth.yaml
+  - k8s/backend/product-service.yaml
+  - k8s/backend/order-service.yaml
+  - k8s/backend/orders.yaml
+  - k8s/backend/user-service.yaml
+  - k8s/frontend/deployment.yaml
