@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: order-service
-          image: 806148750549.dkr.ecr.ap-south-1.amazonaws.com/order-service:c2f2a93e34025dbd612c420b81f0575048a8629d
+          image: 806148750549.dkr.ecr.ap-south-1.amazonaws.com/order-service:d7302858bd02a2d489516eb75bc582c2934e5f36
           ports:
             - containerPort: 3004
           env:
@@ -32,3 +32,19 @@ spec:
               value: "http://auth:3002"
             - name: PRODUCT_SERVICE_URL
               value: "http://product-service:3003"
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+  namespace: boutique
+spec:
+  selector:
+    app: order-service
+  ports:
+    - protocol: TCP
+      port: 3002
+      targetPort: 3002
+  type: ClusterIP

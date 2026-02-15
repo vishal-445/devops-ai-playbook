@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: user-service
-          image: 806148750549.dkr.ecr.ap-south-1.amazonaws.com/user-service:c2f2a93e34025dbd612c420b81f0575048a8629d
+          image: 806148750549.dkr.ecr.ap-south-1.amazonaws.com/user-service:d7302858bd02a2d489516eb75bc582c2934e5f36
           ports:
             - containerPort: 3006
           env:
@@ -28,3 +28,19 @@ spec:
                 secretKeyRef:
                   name: boutique-secrets
                   key: USERS_DB_URL
+
+--- 
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-service
+  namespace: boutique
+spec:
+  selector:
+    app: user-service
+  ports:
+    - protocol: TCP
+      port: 3006
+      targetPort: 3006
+  type: ClusterIP

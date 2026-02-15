@@ -4,21 +4,22 @@ import helmet from 'helmet';
 import * as dotenv from 'dotenv';
 import { orderRoutes } from './routes/orders';
 import { connectDB } from './database/connection';
+import { metricsMiddleware, setupMetrics } from './metrics';
 
 dotenv.config({ path: './.env' });
 
 const app = express();
-const PORT = process.env.PORT || 3004;
+const PORT = process.env.PORT || 3005;
 
 app.use(helmet());
 app.use(cors());
 app.use(express.json());
 
-app.use('', orderRoutes);
+setupMetrics(app, { serviceName: 'orders', serviceVersion: '1.0.0' });
 
-app.get('/health', (req, res) => {
-  res.json({ status: 'Orders service is healthy', timestamp: new Date().toISOString() });
-});
+app.use(metricsMiddleware);
+
+app.use('', orderRoutes);
 
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error(err.stack);

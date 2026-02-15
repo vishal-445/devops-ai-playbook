@@ -5,6 +5,7 @@ import * as dotenv from 'dotenv';
 import path from 'path';
 import { productRoutes } from './routes/products';
 import { connectDB } from './database/connection';
+import { metricsMiddleware, setupMetrics } from './metrics';
 
 dotenv.config({ path: './.env' });
 
@@ -15,14 +16,14 @@ app.use(helmet());
 app.use(cors());
 app.use(express.json());
 
+setupMetrics(app, { serviceName: 'product-service', serviceVersion: '1.0.0' });
+
+app.use(metricsMiddleware);
+
 // Serve static images from public directory
 app.use('/images', express.static(path.join(__dirname, '../../../public')));
 
 app.use('', productRoutes);
-
-app.get('/health', (req, res) => {
-  res.json({ status: 'Product service is healthy', timestamp: new Date().toISOString() });
-});
 
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error(err.stack);

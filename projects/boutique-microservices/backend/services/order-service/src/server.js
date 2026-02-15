@@ -2,9 +2,14 @@ const express = require("express");
 const axios = require("axios");
 const { Pool } = require("pg");
 require("dotenv").config();
+const { metricsMiddleware, setupMetrics } = require('./metrics');
 
 const app = express();
 app.use(express.json());
+
+setupMetrics(app, { serviceName: 'order-service', serviceVersion: '1.0.0' });
+
+app.use(metricsMiddleware);
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL

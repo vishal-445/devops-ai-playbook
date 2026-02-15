@@ -3,14 +3,20 @@ import cors from 'cors';
 import helmet from 'helmet';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import dotenv from 'dotenv';
+import { metricsMiddleware, setupMetrics } from './metrics';
 
 dotenv.config();
 
 const app = express();
+const PORT: number = Number(process.env.GATEWAY_PORT) || 3001;
 
 app.use(helmet());
 app.use(cors());
 app.use(express.json());
+
+setupMetrics(app, { serviceName: 'gateway', serviceVersion: '1.0.0' });
+
+app.use(metricsMiddleware);
 
 const services = {
   auth: process.env.AUTH_SERVICE_URL || 'http://localhost:3002',
@@ -43,10 +49,6 @@ app.use('/api/users', createProxyMiddleware({
   pathRewrite: { '^/api/users': '' },
 }));
 
-app.get('/health', (req, res) => {
-  res.json({ status: 'Gateway is healthy', timestamp: new Date().toISOString() });
-});
-
 app.use((req, res) => {
   res.status(404).json({ error: 'Service not found' });
 });
@@ -56,8 +58,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   res.status(500).json({ error: 'Internal server error' });
 });
 
-const PORT = Number(process.env.PORT) || 3001;
-
-app.listen(PORT, () => {
-  console.log(`Gateway running on port ${PORT}`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`API Gateway running on port ${PORT}`);
+  console.log(`Proxying to services:`, services);
 });

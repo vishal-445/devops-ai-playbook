@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import * as dotenv from 'dotenv';
 import { authRoutes } from './routes/auth';
 import { connectDB } from './database/connection';
+import { metricsMiddleware, setupMetrics } from './metrics';
 
 dotenv.config();
 
@@ -14,11 +15,11 @@ app.use(helmet());
 app.use(cors());
 app.use(express.json());
 
-app.use('', authRoutes);
+setupMetrics(app, { serviceName: 'auth', serviceVersion: '1.0.0' });
 
-app.get('/health', (req, res) => {
-  res.json({ status: 'Auth service is healthy', timestamp: new Date().toISOString() });
-});
+app.use(metricsMiddleware);
+
+app.use('', authRoutes);
 
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error(err.stack);
