@@ -7,7 +7,7 @@ services:
       POSTGRES_DB: boutique_db
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres123
-      POSTGRES_MULTIPLE_DATABASES: auth_db,products_db,orders_db,users_db
+      POSTGRES_MULTIBYTE: auth_db,products_db,orders_db,users_db
     ports:
       - "5432:5432"
     volumes:
@@ -20,6 +20,43 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
+
+
+
+  # Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: boutique-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - boutique-network
+    restart: unless-stopped
+
+  # Grafana
+  grafana:
+    image: grafana/grafana:latest
+    container_name: boutique-grafana
+    ports:
+      - "3007:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - grafana_data:/var/lib/grafana
+    networks:
+      - boutique-network
+    depends_on:
+      - prometheus
+    restart: unless-stopped
 
 
 
@@ -166,6 +203,10 @@ services:
 
 volumes:
   postgres_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
     driver: local
 
 networks:

@@ -2,12 +2,69 @@
 
 This guide outlines the steps to deploy the boutique microservices application on Amazon EKS.
 
+---
+
+## Important: GitHub Actions Secrets
+
+> **Note:** The GitHub Actions secrets are currently configured with Anish's AWS credentials for testing purposes. 
+> 
+> For your own deployment, please update the following secrets in your GitHub repository with your own credentials:
+> 
+> - `AWS_ACCESS_KEY_ID`
+> - `AWS_SECRET_ACCESS_KEY`
+> - `AWS_REGION`
+> - Any other AWS-related secrets
+> 
+> Go to: **Settings → Secrets and variables → Actions** in your GitHub repository to update them.
+
+---
+
 ## Prerequisites
 
 - AWS CLI configured with access key and secret key
 - Terraform installed
 - kubectl installed
 - AWS credentials with appropriate permissions
+- Node.js and npm installed (for local setup)
+
+---
+
+## Local Development Setup (Manual Commands)
+
+If you want to run the application locally without Docker, follow these steps:
+
+### Step 1: Install Dependencies
+
+Navigate to the project directory and install dependencies:
+
+```bash
+cd boutique-microservices
+npm install
+```
+
+### Step 2: Build the Application
+
+Build all services:
+
+```bash
+npm run build
+```
+
+### Step 3: Run with Docker Compose
+
+Start all services using Docker Compose:
+
+```bash
+docker-compose -f docker-compose.yml up -d
+```
+
+### Step 4: Verify Services
+
+Check the running containers:
+
+```bash
+docker ps
+```
 
 ---
 
@@ -68,7 +125,8 @@ alias k=kubectl
 
 ## Step 4: Run CI/CD Pipeline
 
-Go to your project demo pipeline and run the pipeline using the `project-demo` branch.
+1. Navigate to your project demo pipeline in GitHub
+2. Run the pipeline using the `project-demo` branch
 
 ---
 
@@ -88,12 +146,9 @@ Paste the same tag in all service deployments.
 Apply all Kubernetes resources:
 
 ```bash
-
-cd gitops/k8s 
+cd gitops/k8s
 kubectl apply -k .
 ```
-
-Run this command from the k8s directory.
 
 ---
 
@@ -159,7 +214,7 @@ kubectl port-forward svc/kube-prometheus-stack-grafana 3100:80 -n monitoring
 ### Prometheus:
 
 ```bash
-kubectl port-forward svc/prometheus-service 9090:9090 -n monitoring ( forgot the exact service name )
+kubectl port-forward svc/prometheus-service 9090:9090 -n monitoring
 ```
 
 ---
@@ -174,7 +229,8 @@ Get the Grafana admin password:
 kubectl get secret kube-prometheus-stack-grafana -n monitoring -o jsonpath="{.data.admin-password}" | base64 --decode
 ```
 
-- Username: `Admin`
+- Username: `admin`
+- Password: `prom-operator`
 
 ### ArgoCD
 
