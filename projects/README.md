@@ -71,7 +71,7 @@ This guide outlines the steps to deploy the boutique microservices application o
 │                        Monitoring Stack                                    │
 │  ┌─────────────┐                           ┌─────────────┐                 │
 │  │ Prometheus  │◄──────────────────────────│   Grafana   │                 │
-│  │ (Port 9090)│                           │  (Port 3007) │                 │
+│  │ (Port 9090) │                           │  (Port 3007)│                 │
 │  └─────────────┘                           └─────────────┘                 │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
