@@ -306,6 +306,11 @@ kubectl port-forward svc/frontend 3000:3000 -n boutique
 kubectl port-forward svc/gateway 3001:3001 -n boutique
 ```
 
+# To view the application metrics 
+```bash
+localhost:3001/metrics
+```
+
 ### ArgoCD:
 
 ```bash
