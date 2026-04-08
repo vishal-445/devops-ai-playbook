@@ -398,6 +398,10 @@ const Register: React.FC = () => {
                     '&:hover': {
                       backgroundColor: '#b8941f',
                     },
+                    '&.Mui-disabled': {
+                      backgroundColor: 'rgba(212, 175, 55, 0.4)',
+                      color: 'rgba(26, 26, 26, 0.5)',
+                    },
                   }}
                 >
                   {loading ? 'Creating Account...' : 'Create Account'}
