@@ -266,18 +266,11 @@ const Cart: React.FC = () => {
               
               <Button
                 variant="contained"
+                color="secondary"
                 size="large"
                 onClick={handleCheckout}
                 fullWidth
-                sx={{ 
-                  mb: 2,
-                  py: 1.5,
-                  backgroundColor: '#d4af37',
-                  color: '#1a1a1a',
-                  '&:hover': {
-                    backgroundColor: '#b8941f',
-                  },
-                }}
+                sx={{ mb: 2, py: 1.5 }}
               >
                 Proceed to Checkout
               </Button>
