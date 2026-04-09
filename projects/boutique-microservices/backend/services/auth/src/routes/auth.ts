@@ -42,6 +42,8 @@ router.post('/register', async (req, res) => {
         createdAt: user.created_at,
         updatedAt: user.updated_at
       },
+      token: user.id.toString(),
+      refreshToken: user.id.toString(),
       message: 'Registration successful'
     });
   } catch (error) {
@@ -89,6 +91,8 @@ router.post('/login', async (req, res) => {
           createdAt: user.created_at,
           updatedAt: user.updated_at
         },
+        token: user.id.toString(),
+        refreshToken: user.id.toString(),
         message: 'Demo login successful'
       });
       return;
@@ -126,6 +130,8 @@ router.post('/login', async (req, res) => {
         createdAt: user.created_at,
         updatedAt: user.updated_at
       },
+      token: user.id.toString(),
+      refreshToken: user.id.toString(),
       message: 'Login successful'
     });
   } catch (error) {
@@ -139,11 +145,32 @@ router.post('/logout', (req, res) => {
   res.json({ message: 'Logged out successfully' });
 });
 
-router.get('/me', (req, res) => {
-  if (currentUser) {
-    res.json(currentUser);
-  } else {
-    res.status(401).json({ error: 'Not logged in' });
+router.get('/me', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const userId = authHeader?.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
+
+  if (!userId || userId === 'undefined') {
+    return res.status(401).json({ error: 'Not logged in' });
+  }
+
+  try {
+    const result = await query(
+      'SELECT id, email, first_name, last_name, role FROM users WHERE id = $1',
+      [userId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+    const user = result.rows[0];
+    res.json({
+      id: user.id,
+      email: user.email,
+      firstName: user.first_name,
+      lastName: user.last_name,
+      role: user.role
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to get user' });
   }
 });
 

@@ -47,7 +47,11 @@ router.post('/', async (req, res) => {
       data: {
         id: order.id,
         userId: order.user_id,
-        items: [],
+        items: orderItems.map(item => ({
+          productId: item.product_id,
+          quantity: item.quantity,
+          price: item.price
+        })),
         totalAmount: order.total_amount,
         status: order.status,
         shippingAddress: shippingAddress,
@@ -70,24 +74,17 @@ router.get('/my-orders', async (req, res) => {
     const userId = req.query.userId as string || 'demo-user-id';
 
     const result = await query(`
-      SELECT o.*, 
+      SELECT o.*,
              JSON_AGG(
                JSON_BUILD_OBJECT(
                  'id', oi.id,
                  'productId', oi.product_id,
                  'quantity', oi.quantity,
-                 'price', oi.price,
-                 'product', JSON_BUILD_OBJECT(
-                   'id', p.id,
-                   'name', p.name,
-                   'imageUrl', p.image_url,
-                   'category', p.category
-                 )
+                 'price', oi.price
                )
              ) as items
       FROM orders o
-      JOIN order_items oi ON o.id = oi.order_id
-      JOIN products p ON oi.product_id = p.id
+      LEFT JOIN order_items oi ON o.id = oi.order_id
       WHERE o.user_id = $1
       GROUP BY o.id, o.user_id, o.total_amount, o.status, o.shipping_address, o.payment_status, o.created_at, o.updated_at
       ORDER BY o.created_at DESC
