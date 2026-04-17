@@ -1,10 +1,25 @@
-# EKS Deployment Guide
+# Boutique Microservices — Deployment Guide
 
-This guide walks through deploying the boutique microservices application end-to-end on Amazon EKS — from provisioning infrastructure to running the full stack with GitOps, monitoring, and log forwarding.
+This guide walks through the full deployment of the boutique e-commerce application — from running it locally with Docker, to provisioning AWS infrastructure with Terraform, to running it on Kubernetes with a full CI/CD pipeline, GitOps, and observability stack.
 
 ---
 
-## Infrastructure Diagram
+## Table of Contents
+
+1. [Architecture Overview](#architecture-overview)
+2. [Local Development with Docker](#local-development-with-docker)
+3. [Infrastructure Provisioning on AWS](#infrastructure-provisioning-on-aws)
+4. [From Docker to Kubernetes](#from-docker-to-kubernetes)
+5. [Setting Up the CI/CD Pipeline](#setting-up-the-cicd-pipeline)
+6. [Setting Up ArgoCD (GitOps)](#setting-up-argocd-gitops)
+7. [Setting Up Observability](#setting-up-observability)
+8. [Port Forwarding Reference](#port-forwarding-reference)
+9. [Credentials](#credentials)
+10. [Cleanup](#cleanup)
+
+---
+
+## Architecture Overview
 
 ```
                                     ┌─────────────┐
@@ -40,115 +55,123 @@ This guide walks through deploying the boutique microservices application end-to
 └──────────────────────────────────────────────────┘
 ```
 
----
-
-## Service Overview
-
 | Service | Port | Role |
 |---------|------|------|
-| **Frontend** | 3000 | React UI |
-| **Gateway** | 3001 | API Gateway — routes all requests to backend services |
-| **Auth** | 3002 | Login and registration |
-| **Product Service** | 3003 | Product catalog and inventory |
-| **Order Service** | 3004 | Cart and checkout |
-| **Orders** | 3005 | Order history and management |
-| **User Service** | 3006 | User profiles and account management |
-| **PostgreSQL** | 5432 | Database — auth_db, products_db, orders_db, users_db |
-| **Prometheus** | 9090 | Metrics collection |
-| **Grafana** | 8080 | Metrics dashboards |
+| Frontend | 3000 | React UI |
+| Gateway | 3001 | Routes all client requests to backend services |
+| Auth | 3002 | Login and registration |
+| Product Service | 3003 | Product catalog and inventory |
+| Order Service | 3004 | Cart and checkout |
+| Orders | 3005 | Order history and management |
+| User Service | 3006 | User profiles and account management |
+| PostgreSQL | 5432 | Stores auth_db, products_db, orders_db, users_db |
+| Prometheus | 9090 | Metrics collection |
+| Grafana | 8080 | Metrics dashboards |
 
 ---
 
-## Prerequisites
+## Local Development with Docker
 
-Before starting, make sure you have the following installed and configured:
+Before deploying to the cloud, you can run the entire application locally using Docker Compose. This is the fastest way to test changes.
 
-- [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html) — configured with credentials
+### Prerequisites
+
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running
+- [Node.js](https://nodejs.org/) 18+ (only needed if running without Docker)
+
+### Start with Docker Compose
+
+From the `projects/boutique-microservices/` directory:
+
+```bash
+cd projects/boutique-microservices
+docker-compose -f docker-compose.yml up -d
+```
+
+This builds all service images and starts containers for every service plus PostgreSQL, Prometheus, and Grafana.
+
+### Verify everything is running
+
+```bash
+docker ps
+```
+
+You should see containers for: `frontend`, `gateway`, `auth`, `product-service`, `order-service`, `orders`, `user-service`, `postgres`, `prometheus`, `grafana`.
+
+### Access the application
+
+| Service | URL |
+|---------|-----|
+| Frontend | http://localhost:3000 |
+| Gateway metrics | http://localhost:3001/metrics |
+| Grafana | http://localhost:3007 (admin / admin) |
+| Prometheus | http://localhost:9090 |
+
+### Run without Docker (Node.js)
+
+```bash
+cd projects/boutique-microservices
+npm install
+npm run dev          # starts all services concurrently
+```
+
+Or individually:
+
+```bash
+npm run dev:backend   # all backend services
+npm run dev:frontend  # React frontend only
+```
+
+### Stop all services
+
+```bash
+docker-compose -f docker-compose.yml down
+```
+
+---
+
+## Infrastructure Provisioning on AWS
+
+The Terraform configuration in `projects/Infrastructure/` provisions everything needed to run the application on EKS.
+
+### What Terraform creates
+
+| Resource | Details |
+|----------|---------|
+| VPC | 3 public subnets across us-east-1a/b/c |
+| EKS Cluster | `eks-cluster`, Kubernetes 1.34 |
+| Node Group | `m7i-flex.large`, 1–2 nodes, on-demand |
+| ECR Repositories | One per service (7 total) |
+| ArgoCD | Installed via Helm into `argocd` namespace |
+| Prometheus + Grafana | Installed via `kube-prometheus-stack` Helm chart into `monitoring` namespace |
+
+### Prerequisites
+
 - [Terraform](https://developer.hashicorp.com/terraform/install) ≥ 1.5
-- [kubectl](https://kubernetes.io/docs/tasks/tools/)
-- [Helm](https://helm.sh/docs/intro/install/)
-- [Git](https://git-scm.com/)
-- Python 3.10+ (for AIOps assistant only)
-
----
-
-## Step 1: Configure AWS CLI
+- [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html) configured
 
 ```bash
 aws configure
+# Enter: Access Key ID, Secret Access Key, region (us-east-1), output format (json)
 ```
 
-Enter when prompted:
-- **AWS Access Key ID** — from your IAM user
-- **AWS Secret Access Key** — from your IAM user
-- **Default region** — e.g. `us-east-1`
-- **Default output format** — `json`
-
-Verify it works:
-
+Verify:
 ```bash
 aws sts get-caller-identity
 ```
 
----
-
-## Step 2: Set Up GitHub Actions Secrets
-
-The CI pipeline builds Docker images and pushes them to ECR. It needs AWS credentials and your account details stored as GitHub Actions secrets.
-
-### 2a. Create an IAM User for CI
-
-1. Go to **AWS Console → IAM → Users → Create user**
-2. Name it `github-actions-ci`
-3. Attach the following managed policies:
-   - `AmazonEC2ContainerRegistryFullAccess`
-   - `AmazonS3ReadOnlyAccess` *(optional, for Terraform state)*
-4. Go to the user → **Security credentials → Create access key**
-5. Select **Application running outside AWS** → create
-6. Copy the **Access Key ID** and **Secret Access Key** — you only see the secret once
-
-### 2b. Add Secrets to GitHub
-
-Go to your GitHub repository → **Settings → Secrets and variables → Actions → New repository secret**
-
-Add the following secrets one by one:
-
-| Secret Name | Value |
-|-------------|-------|
-| `AWS_ACCESS_KEY_ID` | Access key ID from Step 2a |
-| `AWS_SECRET_ACCESS_KEY` | Secret access key from Step 2a |
-| `AWS_REGION` | Your AWS region (e.g. `us-east-1`) |
-| `AWS_ACCOUNT_ID` | Your 12-digit AWS account ID |
-
-To find your account ID:
-```bash
-aws sts get-caller-identity --query Account --output text
-```
-
----
-
-## Step 3: Provision Infrastructure with Terraform
-
-The Terraform configuration in `projects/Infrastructure/` provisions:
-- VPC with 3 public subnets
-- EKS cluster (`eks-cluster`) with a managed node group
-- ECR repositories for all 7 services
-- ArgoCD and Prometheus/Grafana (via Helm) installed into the cluster
+### Apply infrastructure
 
 ```bash
 cd projects/Infrastructure
 terraform init
-terraform plan
+terraform plan        # review what will be created
 terraform apply --auto-approve
 ```
 
-This takes ~15 minutes. When complete, Terraform outputs the cluster name and ECR repository URLs.
+This takes ~15 minutes. Terraform outputs the cluster name and ECR URLs when done.
 
----
-
-## Step 4: Configure kubectl
-
-Point kubectl at your new EKS cluster:
+### Connect kubectl to the cluster
 
 ```bash
 aws eks update-kubeconfig \
@@ -156,26 +179,139 @@ aws eks update-kubeconfig \
   --name eks-cluster
 ```
 
-Verify the connection:
+Verify nodes are ready:
 
 ```bash
 kubectl get nodes
 ```
 
-You should see your node(s) in `Ready` status.
+---
+
+## From Docker to Kubernetes
+
+Each service has a `Dockerfile` in its directory under `projects/boutique-microservices/`. When deployed to Kubernetes, these become container images stored in ECR, referenced by the manifests in `gitops/k8s/`.
+
+### How it maps
+
+| Docker Compose concept | Kubernetes equivalent |
+|------------------------|----------------------|
+| `image:` in docker-compose.yml | ECR image URI in deployment manifest |
+| `ports:` | `containerPort` + `Service` resource |
+| `environment:` | `env:` or `secretKeyRef` in pod spec |
+| `depends_on:` | Kubernetes starts all pods; services retry until DB is ready |
+| `volumes:` (for postgres) | `PersistentVolumeClaim` via EBS CSI driver |
+
+### Manifest structure
+
+```
+gitops/
+├── argo-cd.yml              # ArgoCD Application — registers this repo for GitOps
+├── kustomization.yml        # Kustomize entry point — lists all resources
+├── namespace.yml            # Creates boutique namespace
+├── secrets.yml              # DB connection strings as a Kubernetes Secret
+└── k8s/
+    ├── backend/             # One Deployment + Service per backend service
+    ├── frontend/            # Frontend Deployment + Service
+    ├── database/            # PostgreSQL StatefulSet, Service, restore Job
+    └── grafana-dashboard.yml # Pre-loaded Grafana dashboard (ConfigMap)
+```
+
+### Apply all manifests
+
+```bash
+kubectl apply -k gitops/
+```
+
+Check pods are coming up:
+
+```bash
+kubectl get pods -n boutique
+```
+
+Wait until all show `Running`. The database pod may take 30–60 seconds longer than the others.
+
+### Restore the database
+
+The application needs seed data. A Kubernetes Job loads the SQL dump into PostgreSQL.
+
+**Wait for the database to be ready first:**
+
+```bash
+kubectl get pods -n boutique -l app=boutique-postgres
+# Wait until READY shows 1/1
+```
+
+**Apply the restore job:**
+
+```bash
+kubectl apply -f gitops/k8s/database/restore-job.yml
+```
+
+**Monitor it:**
+
+```bash
+kubectl get pods -n boutique -l job-name=boutique-db-restore
+# It will go Running → Completed
+```
+
+**Check restore logs:**
+
+```bash
+kubectl logs -n boutique -l job-name=boutique-db-restore
+```
+
+You should see SQL being executed across all 4 databases. `Completed` status means it ran successfully — this is expected and normal.
 
 ---
 
-## Step 5: Run the CI Pipeline
+## Setting Up the CI/CD Pipeline
 
-The pipeline is triggered automatically on every push to `main`. It:
-1. Builds Docker images for all 7 services in parallel
-2. Pushes them to ECR
-3. Updates the image tags in the k8s manifests and commits back to the repo
+The GitHub Actions pipeline (`.github/workflows/ci.yml`) automatically builds Docker images and pushes them to ECR on every push to `main`. It then updates the image tags in the k8s manifests so ArgoCD can sync the new version.
 
-### Trigger the pipeline
+### Pipeline jobs
 
-Push any change to the `main` branch:
+```
+push to main
+     │
+     ▼
+build-and-push (7 parallel jobs)
+  └── For each service: docker build → docker push to ECR
+     │
+     ▼
+update-manifests
+  └── Updates image tags in gitops/k8s/
+  └── Commits back to main
+```
+
+### Step 1: Create an IAM user for GitHub Actions
+
+1. Go to **AWS Console → IAM → Users → Create user**
+2. Name: `github-actions-ci`
+3. Attach managed policies:
+   - `AmazonEC2ContainerRegistryFullAccess`
+4. Go to the user → **Security credentials → Create access key**
+5. Select **Application running outside AWS**
+6. Copy both the **Access Key ID** and **Secret Access Key** (only shown once)
+
+### Step 2: Add secrets to GitHub
+
+Go to your repository → **Settings → Secrets and variables → Actions → New repository secret**
+
+| Secret Name | Value |
+|-------------|-------|
+| `AWS_ACCESS_KEY_ID` | Access key from Step 1 |
+| `AWS_SECRET_ACCESS_KEY` | Secret key from Step 1 |
+| `AWS_REGION` | `us-east-1` (or your region) |
+| `AWS_ACCOUNT_ID` | Your 12-digit AWS account ID |
+
+To find your account ID:
+```bash
+aws sts get-caller-identity --query Account --output text
+```
+
+### Step 3: Trigger the pipeline
+
+Push any change to `main`:
 
 ```bash
 git add .
@@ -183,19 +319,17 @@ git commit -m "trigger CI"
 git push origin main
 ```
 
-### Check pipeline status
+### Step 4: Check pipeline status
 
-1. Go to your GitHub repository → **Actions** tab
-2. Click the latest workflow run — **Boutique CI Pipeline**
-3. You will see two jobs:
-   - **build-and-push** — runs 7 parallel matrix jobs (one per service). Each job builds and pushes a Docker image to ECR.
-   - **update-manifests** — runs after all builds succeed. Updates the image tags in `gitops/k8s/` and commits back to the repo.
-4. Click any job to expand and see logs per step
-5. A green checkmark means the job succeeded. A red X means it failed — click the step to read the error.
+1. Go to your repo → **Actions** tab
+2. Click the latest **Boutique CI Pipeline** run
+3. You'll see two jobs:
+   - **build-and-push** — 7 parallel matrix jobs. Each builds and pushes one service image to ECR.
+   - **update-manifests** — runs after all builds succeed. Replaces image tags in `gitops/k8s/` and commits back.
+4. Click any job → expand any step to see full logs
+5. Green checkmark = success. Red X = failed — click the step to see the error.
 
-### Verify images in ECR
-
-Once the pipeline succeeds, confirm images were pushed:
+### Step 5: Verify images in ECR
 
 ```bash
 aws ecr describe-images \
@@ -205,83 +339,191 @@ aws ecr describe-images \
   --output table
 ```
 
-The tag will match the commit SHA from the pipeline run.
+The tag will be the commit SHA (e.g. `3e910aa...`).
 
 ---
 
-## Step 6: Apply Kubernetes Manifests
+## Setting Up ArgoCD (GitOps)
 
-Apply all resources using Kustomize:
+ArgoCD watches the `main` branch of this repo. Any change pushed to `gitops/` is automatically synced to the cluster — no manual `kubectl apply` needed after setup.
 
-```bash
-kubectl apply -k gitops/
-```
+### What to know
 
-This creates the `boutique` namespace and deploys all services, the database, secrets, and monitoring resources.
+- ArgoCD is already installed by Terraform into the `argocd` namespace
+- The `gitops/argo-cd.yml` file defines the **Application** — it tells ArgoCD which repo, branch, and path to watch
+- When the CI pipeline updates image tags and commits to `main`, ArgoCD detects the change and rolls out the new pods automatically
 
-Check that everything is coming up:
-
-```bash
-kubectl get pods -n boutique
-kubectl get pods -n monitoring
-kubectl get pods -n argocd
-```
-
-Wait until all pods show `Running` or `Completed`. This takes 2–3 minutes.
-
----
-
-## Step 7: Restore the Database
-
-The application needs seed data loaded into PostgreSQL. A Kubernetes Job handles this automatically, but it must be applied after the database pod is running.
-
-### 7a. Wait for the database pod to be ready
-
-```bash
-kubectl get pods -n boutique -l app=boutique-postgres
-```
-
-Wait until `STATUS` shows `Running` and `READY` shows `1/1`.
-
-### 7b. Apply the restore job
-
-```bash
-kubectl apply -f gitops/k8s/database/restore-job.yml
-```
-
-### 7c. Monitor the restore job
-
-```bash
-kubectl get pods -n boutique -l job-name=boutique-db-restore
-```
-
-The pod will show `Running` briefly then `Completed`. This is expected — it means the restore finished successfully.
-
-To see the restore logs:
-
-```bash
-kubectl logs -n boutique -l job-name=boutique-db-restore
-```
-
-You should see SQL commands being executed. The job loads schema and seed data into all 4 databases (`auth_db`, `products_db`, `orders_db`, `users_db`).
-
----
-
-## Step 8: Configure ArgoCD
-
-Apply the ArgoCD Application manifest to register the boutique app for GitOps:
+### Register the application
 
 ```bash
 kubectl apply -f gitops/argo-cd.yml -n argocd
 ```
 
-ArgoCD will now watch the `main` branch and sync any changes to `gitops/` into the cluster automatically.
+### Check sync status
+
+```bash
+kubectl get application -n argocd
+```
+
+You should see `STATUS: Synced` and `HEALTH: Healthy` once the initial sync completes.
+
+### Access the ArgoCD UI
+
+```bash
+kubectl port-forward svc/argocd-server 8443:443 -n argocd &
+```
+
+Open https://localhost:8443
+
+Get the admin password:
+```bash
+kubectl -n argocd get secret argocd-initial-admin-secret \
+  -o jsonpath="{.data.password}" | base64 -d
+```
+
+- Username: `admin`
+
+In the UI you can see each service's sync status, last deployed commit, pod health, and manually trigger a sync if needed.
+
+### How automated sync works
+
+The `syncPolicy` in `argo-cd.yml` can be set to automated:
+
+```yaml
+syncPolicy:
+  automated:
+    prune: true      # delete resources removed from git
+    selfHeal: true   # re-sync if someone manually changes the cluster
+```
+
+Currently sync is manual (`syncPolicy: {}`). Enable automated sync when you're confident the pipeline is stable.
 
 ---
 
-## Step 9: Set Up Log Forwarding (Optional)
+## Setting Up Observability
 
-To forward pod logs to CloudWatch, install Fluent Bit:
+### Prometheus
+
+Prometheus is installed by Terraform via `kube-prometheus-stack`. It scrapes metrics from the cluster and the boutique services.
+
+#### How services expose metrics
+
+Each backend service exposes a `/metrics` endpoint (Node.js `prom-client`). A `ServiceMonitor` resource tells Prometheus where to scrape:
+
+```yaml
+# gitops/k8s/backend/service-monitor.yml
+spec:
+  namespaceSelector:
+    matchNames:
+      - boutique
+  selector:
+    matchLabels:
+      app: gateway
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+```
+
+The `ServiceMonitor` has the label `release: kube-prometheus-stack` which is how the Prometheus Operator discovers it automatically.
+
+#### Access Prometheus
+
+```bash
+kubectl port-forward svc/kube-prometheus-stack-prometheus 9090:9090 -n monitoring &
+```
+
+Open http://localhost:9090
+
+#### Useful PromQL queries to try
+
+```promql
+# Request rate per service
+sum by (job) (rate(http_requests_total[5m]))
+
+# 95th percentile response time
+histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))
+
+# 5xx error rate per service
+sum by (job) (rate(http_requests_total{status_code=~"5.."}[5m]))
+
+# Pod CPU usage
+sum by (pod) (rate(container_cpu_usage_seconds_total{namespace="boutique"}[5m]))
+
+# Pod memory usage
+sum by (pod) (container_memory_working_set_bytes{namespace="boutique"})
+
+# Pod restart count
+kube_pod_container_status_restarts_total{namespace="boutique"}
+
+# Which services are up
+up{job=~"gateway|auth|product-service|order-service|orders|user-service"}
+
+# Node.js heap memory
+nodejs_heap_size_used_bytes
+```
+
+Go to **Graph** tab to visualise any query over time.
+
+---
+
+### Grafana
+
+Grafana is also installed by `kube-prometheus-stack`. It is pre-configured with Prometheus as a datasource and comes with a custom boutique dashboard automatically loaded.
+
+#### How the dashboard is pre-loaded
+
+The dashboard lives in `gitops/k8s/grafana-dashboard.yml` as a `ConfigMap`. It has the label:
+
+```yaml
+labels:
+  grafana_dashboard: "1"
+```
+
+The `kube-prometheus-stack` Helm chart includes a **Grafana sidecar** that watches for ConfigMaps with this label across all namespaces. When it finds one, it automatically imports the JSON dashboard into Grafana — no manual import needed.
+
+#### Access Grafana
+
+```bash
+kubectl port-forward svc/kube-prometheus-stack-grafana 8080:80 -n monitoring &
+```
+
+Open http://localhost:8080
+
+Get the admin password:
+```bash
+kubectl get secret kube-prometheus-stack-grafana -n monitoring \
+  -o jsonpath="{.data.admin-password}" | base64 --decode
+```
+
+- Username: `admin`
+
+#### What's in the pre-loaded dashboard
+
+The **Boutique Microservices** dashboard includes:
+
+| Panel | What it shows |
+|-------|--------------|
+| Request Rate — $service | HTTP requests/sec broken down by status code |
+| Response Time — $service | p95 and p99 latency |
+| Active Requests | In-flight requests at any moment |
+| Error Rate | 5xx rate as a percentage of total traffic |
+| Request Rate by Service | All services on one graph |
+| Node.js Heap Memory | Used vs total heap per service |
+| Node.js Event Loop Lag | Latency in the JS event loop (indicator of CPU pressure) |
+| Pod CPU Usage | CPU per pod in the boutique namespace |
+| Pod Memory Usage | Memory per pod |
+| Pod Restart Count | Surfaces crash-looping pods |
+| Service Health | UP/DOWN status per service |
+| HTTP Error Rate by Service | 4xx and 5xx breakdown per service |
+
+The dashboard has a **Service** dropdown variable at the top — use it to filter all panels to a specific service.
+
+---
+
+### Log Forwarding to CloudWatch (Optional)
+
+Install Fluent Bit to forward pod logs to CloudWatch:
 
 ```bash
 helm repo add aws https://aws.github.io/eks-charts
@@ -299,19 +541,18 @@ helm upgrade --install aws-for-fluent-bit aws/aws-for-fluent-bit \
   --set elasticsearch.enabled=false
 ```
 
-Verify it's running:
-
+Verify:
 ```bash
 kubectl get pods -n amazon-cloudwatch
 ```
 
-Logs will appear in CloudWatch under the log group `/eks/boutique/pods`.
+Logs appear in **CloudWatch → Log groups → /eks/boutique/pods**.
 
 ---
 
-## Port Forwarding
+## Port Forwarding Reference
 
-Run all port forwards in the background to access services locally:
+Run all at once in the background:
 
 ```bash
 kubectl port-forward svc/frontend 3000:3000 -n boutique &
@@ -334,99 +575,22 @@ kubectl port-forward svc/argocd-server 8443:443 -n argocd &
 ## Credentials
 
 ### Grafana
-
 ```bash
 kubectl get secret kube-prometheus-stack-grafana -n monitoring \
   -o jsonpath="{.data.admin-password}" | base64 --decode
 ```
-
-- Username: `admin`
-- Password: output from above
+Username: `admin`
 
 ### ArgoCD
-
 ```bash
 kubectl -n argocd get secret argocd-initial-admin-secret \
   -o jsonpath="{.data.password}" | base64 -d
 ```
-
-- Username: `admin`
-- Password: output from above
-
----
-
-## Verification Commands
-
-```bash
-# All pods across namespaces
-kubectl get pods -n boutique
-kubectl get pods -n monitoring
-kubectl get pods -n argocd
-kubectl get pods -n amazon-cloudwatch
-
-# Services
-kubectl get svc -n boutique
-kubectl get svc -n monitoring
-
-# ArgoCD sync status
-kubectl get application -n argocd
-```
-
----
-
-## Logs
-
-```bash
-# Any service
-kubectl logs -n boutique deploy/<service-name>
-
-# ArgoCD sync issues
-kubectl logs -n argocd deploy/argocd-repo-server
-
-# Database restore job
-kubectl logs -n boutique -l job-name=boutique-db-restore
-```
-
----
-
-## Useful Alias
-
-```bash
-alias k=kubectl
-```
-
-Add to `~/.zshrc` or `~/.bashrc` to make it permanent.
-
----
-
-## Local Development Setup
-
-To run the application locally without Kubernetes:
-
-```bash
-cd projects/boutique-microservices
-npm install
-npm run dev          # starts all services
-```
-
-Or with Docker Compose:
-
-```bash
-docker-compose -f docker-compose.yml up -d
-docker ps            # verify containers
-docker-compose -f docker-compose.yml down
-```
-
-Local URLs:
-- Frontend: http://localhost:3000
-- Grafana: http://localhost:3007 (admin / admin)
-- Prometheus: http://localhost:9090
+Username: `admin`
 
 ---
 
 ## Cleanup
-
-To tear down all AWS infrastructure:
 
 ```bash
 cd projects/Infrastructure
